@@ -6,6 +6,7 @@ node_modules/
 
 # Tauri build and compile targets
 src-tauri/target/
+src-tauri/target_cli/
 
 # Logs
 logs

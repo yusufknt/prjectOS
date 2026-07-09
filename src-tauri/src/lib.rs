@@ -181,6 +181,36 @@ fn delete_project_file(project_path: String, filename: String) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+fn git_push(project_path: String, commit_message: String) -> Result<String, String> {
+    let path = Path::new(&project_path);
+    if !path.exists() {
+        return Err("Project directory does not exist".to_string());
+    }
+
+    // 1. Stage all changes
+    run_git(&project_path, &["add", "."])?;
+
+    // 2. Commit if there are changes
+    let status_output = run_git(&project_path, &["status", "--porcelain"]).unwrap_or_default();
+    if !status_output.is_empty() {
+        run_git(&project_path, &["commit", "-m", &commit_message])?;
+    }
+
+    // 3. Push
+    run_git(&project_path, &["push", "origin", "HEAD"])
+}
+
+#[tauri::command]
+fn git_pull(project_path: String) -> Result<String, String> {
+    let path = Path::new(&project_path);
+    if !path.exists() {
+        return Err("Project directory does not exist".to_string());
+    }
+
+    run_git(&project_path, &["pull", "origin"])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -191,9 +221,12 @@ pub fn run() {
             write_project_file,
             project_file_exists,
             list_project_md_files,
-            delete_project_file
+            delete_project_file,
+            git_push,
+            git_pull
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 

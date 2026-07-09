@@ -10,6 +10,8 @@ import {
   RefreshCw 
 } from 'lucide-react';
 import { GitStatus } from '../../types';
+import { useProjectStore } from '../../store/projectStore';
+import { invoke } from '@tauri-apps/api/core';
 
 interface GitStatusCardProps {
   status: GitStatus | null;
@@ -22,10 +24,60 @@ export const GitStatusCard: React.FC<GitStatusCardProps> = ({
   onRefresh,
   isRefreshing = false,
 }) => {
+  const { projects, selectedProjectId, refreshGitStatus } = useProjectStore();
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = React.useState<string | null>(null);
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
+  const handlePull = async () => {
+    if (!selectedProject) return;
+    setIsSyncing(true);
+    setSyncStatusMsg('GitHub\'dan çekiliyor...');
+    try {
+      await invoke('git_pull', { projectPath: selectedProject.local_path });
+      setSyncStatusMsg('Güncellemeler başarıyla çekildi! ✅');
+      refreshGitStatus(selectedProject.id);
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } catch (e) {
+      alert(`Pull hatası: ${e}`);
+      setSyncStatusMsg('Çekme işlemi başarısız ❌');
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handlePush = async () => {
+    if (!selectedProject) return;
+    setIsSyncing(true);
+    setSyncStatusMsg('GitHub\'a gönderiliyor...');
+    const now = new Date().toLocaleString('tr-TR');
+    const commitMessage = `ProjectOS Sync: ${now}`;
+    try {
+      await invoke('git_push', { 
+        projectPath: selectedProject.local_path,
+        commitMessage: commitMessage
+      });
+      setSyncStatusMsg('Başarıyla pushlandı! ✅');
+      refreshGitStatus(selectedProject.id);
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } catch (e) {
+      alert(`Push hatası: ${e}`);
+      setSyncStatusMsg('Gönderme işlemi başarısız ❌');
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   if (!status) {
     return (
-      <div className="p-6 rounded-3xl glass-panel text-center text-xs text-neutral-400">
-        Git durumu okunamadı veya bu projenin yerel yolda Git deposu bulunmuyor.
+      <div className="p-6 rounded-3xl glass-panel text-center text-xs text-neutral-400 space-y-4">
+        <p>Git durumu okunamadı veya bu projenin yerel yolda Git deposu bulunmuyor.</p>
+        {selectedProject && (
+          <p className="text-[10px] text-neutral-500 font-mono">Dizin: {selectedProject.local_path}</p>
+        )}
       </div>
     );
   }
@@ -122,6 +174,37 @@ export const GitStatusCard: React.FC<GitStatusCardProps> = ({
           </span>
         </div>
       </div>
+
+      {/* GitHub Sync Actions */}
+      {selectedProject && (
+        <div className="space-y-2 pt-3 border-t border-neutral-200/60 dark:border-neutral-800/60">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-semibold text-neutral-500">GitHub Senkronizasyonu</span>
+            {syncStatusMsg && (
+              <span className="text-[10px] text-blue-500 font-medium animate-pulse">{syncStatusMsg}</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handlePull}
+              disabled={isSyncing}
+              className="flex items-center justify-center space-x-2 py-2 px-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/80 text-neutral-700 dark:text-neutral-300 text-xs font-semibold border border-neutral-250/30 dark:border-neutral-750/30 transition-all active:scale-[0.98] disabled:opacity-50"
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5 text-purple-500" />
+              <span>Pull (Çek)</span>
+            </button>
+
+            <button
+              onClick={handlePush}
+              disabled={isSyncing}
+              className="flex items-center justify-center space-x-2 py-2 px-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all active:scale-[0.98] disabled:opacity-50 shadow-sm shadow-blue-500/10"
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>Push (Gönder)</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
