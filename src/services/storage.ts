@@ -293,6 +293,21 @@ export const storageService = {
     }
   },
 
+  async saveAllGlobalNotes(notes: WorkspaceDocument[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.GLOBAL_NOTES, JSON.stringify(notes));
+
+    if (isTauri()) {
+      for (const note of notes) {
+        const filename = getFilenameFromDocId(note.id) || `${note.title}.md`;
+        try {
+          await invoke('write_global_note', { filename, content: note.content });
+        } catch (e) {
+          console.warn(`Tauri küresel not senkron kayıt uyarısı (${filename}):`, e);
+        }
+      }
+    }
+  },
+
   async deleteGlobalNote(filename: string): Promise<void> {
     const id = `global-${filename}`;
     const localData = localStorage.getItem(STORAGE_KEYS.GLOBAL_NOTES);

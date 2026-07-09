@@ -235,6 +235,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (projects && Array.isArray(projects)) {
         storageService.saveProjects(projects);
       }
+      if (notes && Array.isArray(notes)) {
+        await storageService.saveAllGlobalNotes(notes);
+      }
+      if (tasks && Array.isArray(tasks) && projects && Array.isArray(projects)) {
+        for (const proj of projects) {
+          const projTasks = tasks.filter((t) => t.project_id === proj.id);
+          await storageService.saveProjectTasks(proj.local_path || proj.id, projTasks);
+        }
+      }
       set({
         projects: projects || [],
         notes: notes || [],
@@ -359,6 +368,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   ensureProjectDocs: async () => {
+    if (get().workspaceDocs && get().workspaceDocs.length > 0) {
+      return;
+    }
     try {
       const docs = await storageService.getGlobalNotes();
       set({ workspaceDocs: docs, notes: docs });
