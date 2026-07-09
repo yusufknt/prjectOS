@@ -211,6 +211,17 @@ fn git_pull(project_path: String) -> Result<String, String> {
     run_git(&project_path, &["pull", "origin"])
 }
 
+#[tauri::command]
+fn rename_project_file(project_path: String, old_filename: String, new_filename: String) -> Result<(), String> {
+    let dir_path = Path::new(&project_path).join(".projectos");
+    let old_path = dir_path.join(old_filename);
+    let new_path = dir_path.join(new_filename);
+    if old_path.exists() {
+        fs::rename(old_path, new_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -223,10 +234,12 @@ pub fn run() {
             list_project_md_files,
             delete_project_file,
             git_push,
-            git_pull
+            git_pull,
+            rename_project_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 
 

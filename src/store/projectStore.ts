@@ -5,8 +5,7 @@ import {
   TimelineItem, 
   GitStatus, 
   TaskStatus, 
-  WorkspaceDocument,
-  WorkspaceDocumentType 
+  WorkspaceDocument 
 } from '../types';
 import { storageService, getFilenameFromDocId } from '../services/storage';
 import { gitService } from '../services/git';
@@ -32,10 +31,11 @@ interface ProjectState {
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
 
-  // Geliştirici Çalışma Alanı Dokümanları
-  addWorkspaceDoc: (doc: Omit<WorkspaceDocument, 'id' | 'updated_at'>) => Promise<void>;
+  // Geliştirici Notları Dokümanları
+  addWorkspaceDoc: (doc: Omit<WorkspaceDocument, 'id' | 'updated_at' | 'doc_type'>) => Promise<void>;
   updateWorkspaceDoc: (id: string, updates: Partial<WorkspaceDocument>) => Promise<void>;
   deleteWorkspaceDoc: (id: string) => Promise<void>;
+  renameWorkspaceDoc: (id: string, newTitle: string) => Promise<void>;
   ensureProjectDocs: (projectId: string) => Promise<void>;
 
   // Görev İşlemleri
@@ -219,49 +219,59 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   addWorkspaceDoc: async (docData) => {
     const now = new Date().toISOString();
-    const filename = docData.title.endsWith('.md') ? docData.title : `${docData.title}.md`;
-    const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    let baseTitle = docData.title.trim();
+    if (!baseTitle) baseTitle = 'Yeni Not';
+    let filename = `${baseTitle.replace(/ /g, '_')}.md`;
+    
+    const project = get().projects.find((p) => p.id === docData.project_id);
+    if (!project) return;
+
+    // Tekil dosya ismi garantile
+    let counter = 1;
+    while (get().workspaceDocs.some((d) => d.id === `doc-${project.id}-${filename}`)) {
+      filename = `${baseTitle.replace(/ /g, '_')}_(${counter}).md`;
+      counter++;
+    }
+
     const newDoc: WorkspaceDocument = {
       ...docData,
-      id: `doc-${docData.project_id}-${sanitizedFilename}`,
+      doc_type: 'notes',
+      id: `doc-${docData.project_id}-${filename}`,
       updated_at: now,
     };
 
-    const project = get().projects.find((p) => p.id === docData.project_id);
-    if (project) {
-      try {
-        await storageService.saveProjectDoc(project.local_path, sanitizedFilename, newDoc.content);
+    try {
+      await storageService.saveProjectDoc(project.local_path, filename, newDoc.content);
 
-        const timelineItem: TimelineItem = {
-          id: `time-${Date.now()}`,
-          project_id: docData.project_id,
-          type: 'note_created',
-          content: `Çalışma alanı dosyası eklendi: "${docData.title}"`,
-          created_at: now,
+      const timelineItem: TimelineItem = {
+        id: `time-${Date.now()}`,
+        project_id: docData.project_id,
+        type: 'note_created',
+        content: `Not eklendi: "${docData.title}"`,
+        created_at: now,
+      };
+
+      const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
+      const updatedTimeline = [timelineItem, ...projectTimeline];
+      await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
+
+      set((state) => {
+        const otherDocs = state.workspaceDocs.filter((d) => d.id !== newDoc.id);
+        const nextDocs = [newDoc, ...otherDocs];
+
+        const otherTimeline = state.timeline.filter((t) => t.project_id !== project.id);
+        const nextTimeline = [timelineItem, ...otherTimeline, ...state.timeline].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        return {
+          workspaceDocs: nextDocs,
+          notes: nextDocs,
+          timeline: nextTimeline,
         };
-
-        const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
-        const updatedTimeline = [timelineItem, ...projectTimeline];
-        await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
-
-        set((state) => {
-          const otherDocs = state.workspaceDocs.filter((d) => d.id !== newDoc.id);
-          const nextDocs = [newDoc, ...otherDocs];
-
-          const otherTimeline = state.timeline.filter((t) => t.project_id !== project.id);
-          const nextTimeline = [timelineItem, ...otherTimeline, ...state.timeline].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-
-          return {
-            workspaceDocs: nextDocs,
-            notes: nextDocs,
-            timeline: nextTimeline,
-          };
-        });
-      } catch (e) {
-        console.error("Doküman eklenirken hata:", e);
-      }
+      });
+    } catch (e) {
+      console.error("Doküman eklenirken hata:", e);
     }
   },
 
@@ -285,6 +295,43 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await storageService.saveProjectDoc(project.local_path, filename, updatedDoc.content);
     } catch (e) {
       console.error("Doküman güncellenirken hata:", e);
+    }
+  },
+
+  renameWorkspaceDoc: async (id, newTitle) => {
+    const doc = get().workspaceDocs.find((d) => d.id === id);
+    if (!doc) return;
+
+    const project = get().projects.find((p) => p.id === doc.project_id);
+    if (!project) return;
+
+    const oldFilename = getFilenameFromDocId(id);
+    
+    let sanitizedTitle = newTitle.trim().replace(/[^a-zA-Z0-9.\-_ ]/g, '');
+    if (!sanitizedTitle) sanitizedTitle = 'Adsiz_Not';
+    const newFilename = `${sanitizedTitle.replace(/ /g, '_')}.md`;
+    const newId = `doc-${project.id}-${newFilename}`;
+
+    try {
+      await storageService.renameProjectDoc(project.local_path, oldFilename, newFilename);
+      
+      set((state) => {
+        const nextDocs = state.workspaceDocs.map((d) => {
+          if (d.id === id) {
+            return {
+              ...d,
+              id: newId,
+              title: newTitle,
+              updated_at: new Date().toISOString(),
+            };
+          }
+          return d;
+        });
+
+        return { workspaceDocs: nextDocs, notes: nextDocs };
+      });
+    } catch (e) {
+      console.error("Yeniden adlandırma hatası:", e);
     }
   },
 

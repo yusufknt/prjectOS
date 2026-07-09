@@ -3,8 +3,7 @@ import {
   Project, 
   Task, 
   TimelineItem, 
-  WorkspaceDocument, 
-  WorkspaceDocumentType 
+  WorkspaceDocument 
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -17,7 +16,7 @@ const INITIAL_PROJECTS: Project[] = [
     name: 'ProjectOS Masaüstü Yönetim',
     description: 'Tauri 2, React 19 ve Dosya Tabanlı (File-Based Workspace) geliştirici yönetim uygulaması.',
     local_path: 'C:\\Users\\yusuf\\Desktop\\projectOS',
-    repository: 'https://github.com/yusuf/project-os',
+    repository: 'https://github.com/yusufknt/prjectOS.git',
     status: 'active',
     progress: 85,
     created_at: '2026-07-01T10:00:00Z',
@@ -25,58 +24,11 @@ const INITIAL_PROJECTS: Project[] = [
   },
 ];
 
-function getDocTitle(filename: string): string {
-  switch (filename) {
-    case 'notes.md': return 'Genel Geliştirme Notları (notes.md)';
-    case 'architecture.md': return 'Sistem Mimarisi (architecture.md)';
-    case 'decisions.md': return 'Mimari Karar Kayıtları (decisions.md)';
-    case 'ideas.md': return 'Gelecek Fikirler ve İlhamlar (ideas.md)';
-    default: {
-      const base = filename.replace('.md', '');
-      return `${base} (${filename})`;
-    }
-  }
-}
-
-function getDocType(filename: string): WorkspaceDocumentType {
-  switch (filename) {
-    case 'notes.md': return 'notes';
-    case 'architecture.md': return 'architecture';
-    case 'decisions.md': return 'decisions';
-    case 'ideas.md': return 'ideas';
-    default: return 'notes'; // Varsayılan olarak notlar kategorisinde gösterilir
-  }
-}
-
-function getDefaultDocContent(projectName: string, docType: WorkspaceDocumentType): string {
-  const now = new Date().toLocaleDateString('tr-TR');
-  switch (docType) {
-    case 'notes':
-      return `# ${projectName} — Geliştirme Notları\n\nBu dosya projenizin günlük geliştirme notları için tasarlanmıştır.`;
-    case 'architecture':
-      return `# ${projectName} — Mimari Tasarım\n\nKullanılan kütüphaneler, katmanlar ve akış şemalarını buraya ekleyebilirsiniz.`;
-    case 'decisions':
-      return `# ${projectName} — Karar Kayıtları (ADR)\n\n## Karar #001: Başlangıç Teknoloji Yığını\n- Tarih: ${now}\n- Durum: Kabul Edildi ✅`;
-    case 'ideas':
-      return `# ${projectName} — Fikirler & Yol Haritası\n\n- Gelecekte eklenebilecek özellikler ve ilhamlar.`;
-  }
-}
-
 export const getFilenameFromDocId = (docId: string): string => {
-  if (docId.includes('.md')) {
-    const parts = docId.split('-');
-    return parts[parts.length - 1];
-  }
+  // id formatı: doc-${projectId}-${filename}
   const parts = docId.split('-');
-  const suffix = parts[parts.length - 1];
-  switch (suffix) {
-    case 'notes': return 'notes.md';
-    case 'arch':
-    case 'architecture': return 'architecture.md';
-    case 'decisions': return 'decisions.md';
-    case 'ideas': return 'ideas.md';
-    default: return `${suffix}.md`;
-  }
+  // Son kısmı al (filename.md)
+  return parts[parts.length - 1];
 };
 
 export const storageService = {
@@ -144,41 +96,33 @@ export const storageService = {
     }
   },
 
-  // Projeye özel Dokümanları (bütün .md dosyalarını) oku/oluştur
+  // Projeye özel Dokümanları (.md dosyalarını) oku/oluştur
   async getProjectDocs(projectId: string, projectPath: string, projectName: string): Promise<WorkspaceDocument[]> {
-    const defaultFilenames = ['notes.md', 'architecture.md', 'decisions.md', 'ideas.md'];
     const docs: WorkspaceDocument[] = [];
 
     try {
-      // Önce klasördeki tüm .md dosyalarını listele
+      // Klasördeki .md dosyalarını listele
       let mdFiles = await invoke<string[]>('list_project_md_files', { projectPath });
       
-      // Eğer varsayılan dosyalar henüz oluşmamışsa, listeye ekle (döngüde otomatik oluşturulacaklar)
-      defaultFilenames.forEach(file => {
-        if (!mdFiles.includes(file)) {
-          mdFiles.push(file);
-        }
-      });
+      // Eğer hiç markdown dosyası yoksa varsayılan bir adet 'Notlar.md' oluştur
+      if (mdFiles.length === 0) {
+        const defaultFilename = 'Notlar.md';
+        const defaultContent = `# ${projectName} Notları\n\n- Apple Notlar tarzı sadeleştirilmiş not sistemi.\n- Yeni notlar ekleyebilir, başlıklarını ve içeriklerini düzenleyebilirsiniz.`;
+        await invoke('write_project_file', { projectPath, filename: defaultFilename, content: defaultContent });
+        mdFiles = [defaultFilename];
+      }
 
       for (const filename of mdFiles) {
-        const exists = await invoke<boolean>('project_file_exists', { projectPath, filename });
-        let content = '';
-
-        if (!exists) {
-          const docType = getDocType(filename);
-          content = getDefaultDocContent(projectName, docType);
-          await invoke('write_project_file', { projectPath, filename, content });
-        } else {
-          content = await invoke<string>('read_project_file', { projectPath, filename });
-        }
+        const content = await invoke<string>('read_project_file', { projectPath, filename });
+        const title = filename.replace('.md', '').replace(/_/g, ' ');
 
         docs.push({
           id: `doc-${projectId}-${filename}`,
           project_id: projectId,
-          doc_type: getDocType(filename),
-          title: getDocTitle(filename),
+          doc_type: 'notes', // Sadeleştirilmiş olarak hepsi 'notes'
+          title,
           content,
-          updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(), // Gerçek zamanlı okunduğu için timestamp
         });
       }
     } catch (e) {
@@ -203,6 +147,15 @@ export const storageService = {
       await invoke('delete_project_file', { projectPath, filename });
     } catch (e) {
       console.error(`${filename} silinirken hata:`, e);
+    }
+  },
+
+  // Projeye özel Dokümanı (Markdown dosyası) yeniden adlandır
+  async renameProjectDoc(projectPath: string, oldFilename: string, newFilename: string): Promise<void> {
+    try {
+      await invoke('rename_project_file', { projectPath, oldFilename, newFilename });
+    } catch (e) {
+      console.error('Dosya yeniden adlandırılamadı:', e);
     }
   },
 };
