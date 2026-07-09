@@ -161,16 +161,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       created_at: now,
     };
 
+    set((state) => ({
+      projects: updatedProjects,
+      timeline: [timelineItem, ...state.timeline],
+      selectedProjectId: newProject.id,
+    }));
+
     try {
       await storageService.saveProjectTasks(newProject.local_path, []);
       await storageService.saveProjectTimeline(newProject.local_path, [timelineItem]);
-
-      set((state) => ({
-        projects: updatedProjects,
-        timeline: [timelineItem, ...state.timeline],
-        selectedProjectId: newProject.id,
-      }));
-
       get().refreshGitStatus(newProject.id);
     } catch (e) {
       console.error("Proje eklenirken hata:", e);
@@ -229,17 +228,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       updated_at: now,
     };
 
+    set((state) => {
+      const otherDocs = state.workspaceDocs.filter((d) => d.id !== newDoc.id);
+      const nextDocs = [newDoc, ...otherDocs];
+      return {
+        workspaceDocs: nextDocs,
+        notes: nextDocs,
+      };
+    });
+
     try {
       await storageService.saveGlobalNote(filename, newDoc.content);
-
-      set((state) => {
-        const otherDocs = state.workspaceDocs.filter((d) => d.id !== newDoc.id);
-        const nextDocs = [newDoc, ...otherDocs];
-        return {
-          workspaceDocs: nextDocs,
-          notes: nextDocs,
-        };
-      });
     } catch (e) {
       console.error("Küresel not eklenirken hata:", e);
     }
