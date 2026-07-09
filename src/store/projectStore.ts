@@ -14,7 +14,7 @@ interface ProjectState {
   projects: Project[];
   selectedProjectId: string | null;
   workspaceDocs: WorkspaceDocument[];
-  notes: WorkspaceDocument[]; // Geriye dönük uyumluluk alias
+  notes: WorkspaceDocument[];
   tasks: Task[];
   timeline: TimelineItem[];
   gitStatuses: Record<string, GitStatus | null>;
@@ -31,8 +31,8 @@ interface ProjectState {
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
 
-  // Geliştirici Notları Dokümanları
-  addWorkspaceDoc: (doc: Omit<WorkspaceDocument, 'id' | 'updated_at' | 'doc_type'>) => Promise<void>;
+  // Küresel Not İşlemleri
+  addWorkspaceDoc: (doc: Omit<WorkspaceDocument, 'id' | 'updated_at' | 'doc_type' | 'project_id'>) => Promise<void>;
   updateWorkspaceDoc: (id: string, updates: Partial<WorkspaceDocument>) => Promise<void>;
   deleteWorkspaceDoc: (id: string) => Promise<void>;
   renameWorkspaceDoc: (id: string, newTitle: string) => Promise<void>;
@@ -75,31 +75,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         let allTasks: Task[] = [];
         let allTimeline: TimelineItem[] = [];
-        let allDocs: WorkspaceDocument[] = [];
 
+        // 1. Proje Görevleri ve Zaman Akışını oku
         await Promise.all(
           projects.map(async (project) => {
-            const [tasks, timeline, docs] = await Promise.all([
+            const [tasks, timeline] = await Promise.all([
               storageService.getProjectTasks(project.local_path),
               storageService.getProjectTimeline(project.local_path),
-              storageService.getProjectDocs(project.id, project.local_path, project.name),
             ]);
             allTasks = [...allTasks, ...tasks];
             allTimeline = [...allTimeline, ...timeline];
-            allDocs = [...allDocs, ...docs];
           })
         );
 
         allTimeline.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
+        // 2. KÜRESEL NOTLARI oku (Proje bazlı değil, geneldir)
+        const globalNotes = await storageService.getGlobalNotes();
+
         set({
-          workspaceDocs: allDocs,
-          notes: allDocs,
+          workspaceDocs: globalNotes,
+          notes: globalNotes,
           tasks: allTasks,
           timeline: allTimeline,
         });
 
-        // Git durumunu oku
+        // Git durumunu yenile
         get().refreshGitStatus(firstProjectId);
       } catch (e) {
         console.error("Başlangıç verisi yüklenirken hata:", e);
@@ -116,25 +117,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         get().refreshGitStatus(id);
 
-        const [docs, tasks, timeline] = await Promise.all([
-          storageService.getProjectDocs(project.id, project.local_path, project.name),
+        const [tasks, timeline] = await Promise.all([
           storageService.getProjectTasks(project.local_path),
           storageService.getProjectTimeline(project.local_path),
         ]);
 
         set((state) => {
-          const otherDocs = state.workspaceDocs.filter((d) => d.project_id !== id);
           const otherTasks = state.tasks.filter((t) => t.project_id !== id);
           const otherTimeline = state.timeline.filter((t) => t.project_id !== id);
 
-          const newDocs = [...docs, ...otherDocs];
           const newTimeline = [...timeline, ...otherTimeline].sort(
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
 
           return {
-            workspaceDocs: newDocs,
-            notes: newDocs,
             tasks: [...tasks, ...otherTasks],
             timeline: newTimeline,
           };
@@ -161,19 +157,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       id: `time-${Date.now()}`,
       project_id: newProject.id,
       type: 'status_change',
-      content: `Yeni proje ve dosya tabanlı çalışma alanı oluşturuldu: "${newProject.name}"`,
+      content: `Yeni proje eklendi: "${newProject.name}"`,
       created_at: now,
     };
 
     try {
-      const defaultDocs = await storageService.getProjectDocs(newProject.id, newProject.local_path, newProject.name);
       await storageService.saveProjectTasks(newProject.local_path, []);
       await storageService.saveProjectTimeline(newProject.local_path, [timelineItem]);
 
       set((state) => ({
         projects: updatedProjects,
-        workspaceDocs: [...defaultDocs, ...state.workspaceDocs],
-        notes: [...defaultDocs, ...state.workspaceDocs],
         timeline: [timelineItem, ...state.timeline],
         selectedProjectId: newProject.id,
       }));
@@ -199,14 +192,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     storageService.saveProjects(updatedProjects);
 
     set((state) => {
-      const updatedDocs = state.workspaceDocs.filter((d) => d.project_id !== id);
       const updatedTasks = state.tasks.filter((t) => t.project_id !== id);
       const updatedTimeline = state.timeline.filter((t) => t.project_id !== id);
 
       return {
         projects: updatedProjects,
-        workspaceDocs: updatedDocs,
-        notes: updatedDocs,
         tasks: updatedTasks,
         timeline: updatedTimeline,
         selectedProjectId:
@@ -217,70 +207,48 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
+  // Küresel Not Ekle
   addWorkspaceDoc: async (docData) => {
     const now = new Date().toISOString();
     let baseTitle = docData.title.trim();
     if (!baseTitle) baseTitle = 'Yeni Not';
     let filename = `${baseTitle.replace(/ /g, '_')}.md`;
-    
-    const project = get().projects.find((p) => p.id === docData.project_id);
-    if (!project) return;
 
-    // Tekil dosya ismi garantile
+    // Dosya adı çakışmasını engelle
     let counter = 1;
-    while (get().workspaceDocs.some((d) => d.id === `doc-${project.id}-${filename}`)) {
+    while (get().workspaceDocs.some((d) => d.id === `global-${filename}`)) {
       filename = `${baseTitle.replace(/ /g, '_')}_(${counter}).md`;
       counter++;
     }
 
     const newDoc: WorkspaceDocument = {
       ...docData,
+      project_id: 'global',
       doc_type: 'notes',
-      id: `doc-${docData.project_id}-${filename}`,
+      id: `global-${filename}`,
       updated_at: now,
     };
 
     try {
-      await storageService.saveProjectDoc(project.local_path, filename, newDoc.content);
-
-      const timelineItem: TimelineItem = {
-        id: `time-${Date.now()}`,
-        project_id: docData.project_id,
-        type: 'note_created',
-        content: `Not eklendi: "${docData.title}"`,
-        created_at: now,
-      };
-
-      const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
-      const updatedTimeline = [timelineItem, ...projectTimeline];
-      await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
+      await storageService.saveGlobalNote(filename, newDoc.content);
 
       set((state) => {
         const otherDocs = state.workspaceDocs.filter((d) => d.id !== newDoc.id);
         const nextDocs = [newDoc, ...otherDocs];
-
-        const otherTimeline = state.timeline.filter((t) => t.project_id !== project.id);
-        const nextTimeline = [timelineItem, ...otherTimeline, ...state.timeline].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-
         return {
           workspaceDocs: nextDocs,
           notes: nextDocs,
-          timeline: nextTimeline,
         };
       });
     } catch (e) {
-      console.error("Doküman eklenirken hata:", e);
+      console.error("Küresel not eklenirken hata:", e);
     }
   },
 
+  // Küresel Not Güncelle
   updateWorkspaceDoc: async (id, updates) => {
     const doc = get().workspaceDocs.find((d) => d.id === id);
     if (!doc) return;
-
-    const project = get().projects.find((p) => p.id === doc.project_id);
-    if (!project) return;
 
     const now = new Date().toISOString();
     const updatedDoc = { ...doc, ...updates, updated_at: now };
@@ -292,28 +260,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     try {
       const filename = getFilenameFromDocId(id);
-      await storageService.saveProjectDoc(project.local_path, filename, updatedDoc.content);
+      await storageService.saveGlobalNote(filename, updatedDoc.content);
     } catch (e) {
-      console.error("Doküman güncellenirken hata:", e);
+      console.error("Küresel not güncellenirken hata:", e);
     }
   },
 
+  // Küresel Not Yeniden Adlandır
   renameWorkspaceDoc: async (id, newTitle) => {
     const doc = get().workspaceDocs.find((d) => d.id === id);
     if (!doc) return;
-
-    const project = get().projects.find((p) => p.id === doc.project_id);
-    if (!project) return;
 
     const oldFilename = getFilenameFromDocId(id);
     
     let sanitizedTitle = newTitle.trim().replace(/[^a-zA-Z0-9.\-_ ]/g, '');
     if (!sanitizedTitle) sanitizedTitle = 'Adsiz_Not';
     const newFilename = `${sanitizedTitle.replace(/ /g, '_')}.md`;
-    const newId = `doc-${project.id}-${newFilename}`;
+    const newId = `global-${newFilename}`;
 
     try {
-      await storageService.renameProjectDoc(project.local_path, oldFilename, newFilename);
+      await storageService.renameGlobalNote(oldFilename, newFilename);
       
       set((state) => {
         const nextDocs = state.workspaceDocs.map((d) => {
@@ -331,16 +297,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return { workspaceDocs: nextDocs, notes: nextDocs };
       });
     } catch (e) {
-      console.error("Yeniden adlandırma hatası:", e);
+      console.error("Küresel not adı değiştirilirken hata:", e);
     }
   },
 
+  // Küresel Not Sil
   deleteWorkspaceDoc: async (id) => {
     const doc = get().workspaceDocs.find((d) => d.id === id);
     if (!doc) return;
-
-    const project = get().projects.find((p) => p.id === doc.project_id);
-    if (!project) return;
 
     set((state) => {
       const nextDocs = state.workspaceDocs.filter((d) => d.id !== id);
@@ -349,24 +313,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     try {
       const filename = getFilenameFromDocId(id);
-      await storageService.deleteProjectDoc(project.local_path, filename);
+      await storageService.deleteGlobalNote(filename);
     } catch (e) {
-      console.error("Doküman silinirken hata:", e);
+      console.error("Küresel not silinirken hata:", e);
     }
   },
 
-  ensureProjectDocs: async (projectId) => {
-    const project = get().projects.find((p) => p.id === projectId);
-    if (!project) return;
+  ensureProjectDocs: async () => {
     try {
-      const docs = await storageService.getProjectDocs(project.id, project.local_path, project.name);
-      set((state) => {
-        const otherDocs = state.workspaceDocs.filter((d) => d.project_id !== projectId);
-        const newDocs = [...docs, ...otherDocs];
-        return { workspaceDocs: newDocs, notes: newDocs };
-      });
+      const docs = await storageService.getGlobalNotes();
+      set({ workspaceDocs: docs, notes: docs });
     } catch (e) {
-      console.error("Dosyalar kontrol edilirken hata:", e);
+      console.error("Küresel notlar yüklenirken hata:", e);
     }
   },
 

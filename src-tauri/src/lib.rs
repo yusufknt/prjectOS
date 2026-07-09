@@ -222,6 +222,83 @@ fn rename_project_file(project_path: String, old_filename: String, new_filename:
     Ok(())
 }
 
+fn get_global_notes_dir() -> std::path::PathBuf {
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    if dir.ends_with("src-tauri") {
+        if let Some(parent) = dir.parent() {
+            dir = parent.to_path_buf();
+        }
+    }
+    let notes_dir = dir.join("notes");
+    if !notes_dir.exists() {
+        let _ = fs::create_dir_all(&notes_dir);
+    }
+    notes_dir
+}
+
+#[tauri::command]
+fn read_global_note(filename: String) -> Result<String, String> {
+    let notes_dir = get_global_notes_dir();
+    let file_path = notes_dir.join(filename);
+    if !file_path.exists() {
+        return Err("Note not found".to_string());
+    }
+    fs::read_to_string(file_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_global_note(filename: String, content: String) -> Result<(), String> {
+    let notes_dir = get_global_notes_dir();
+    let file_path = notes_dir.join(filename);
+    fs::write(file_path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_global_note(filename: String) -> Result<(), String> {
+    let notes_dir = get_global_notes_dir();
+    let file_path = notes_dir.join(filename);
+    if file_path.exists() {
+        fs::remove_file(file_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn list_global_notes() -> Result<Vec<String>, String> {
+    let notes_dir = get_global_notes_dir();
+    let mut files = Vec::new();
+    if let Ok(entries) = fs::read_dir(notes_dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension() {
+                        if ext == "md" {
+                            if let Some(name) = path.file_name() {
+                                if let Some(name_str) = name.to_str() {
+                                    files.push(name_str.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(files)
+}
+
+#[tauri::command]
+fn rename_global_note(old_filename: String, new_filename: String) -> Result<(), String> {
+    let notes_dir = get_global_notes_dir();
+    let old_path = notes_dir.join(old_filename);
+    let new_path = notes_dir.join(new_filename);
+    if old_path.exists() {
+        fs::rename(old_path, new_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -235,11 +312,17 @@ pub fn run() {
             delete_project_file,
             git_push,
             git_pull,
-            rename_project_file
+            rename_project_file,
+            read_global_note,
+            write_global_note,
+            delete_global_note,
+            list_global_notes,
+            rename_global_note
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 
 
 

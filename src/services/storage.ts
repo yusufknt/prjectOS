@@ -25,7 +25,7 @@ const INITIAL_PROJECTS: Project[] = [
 ];
 
 export const getFilenameFromDocId = (docId: string): string => {
-  // id formatı: doc-${projectId}-${filename}
+  // id formatı: doc-${projectId}-${filename} veya global-${filename}
   const parts = docId.split('-');
   // Son kısmı al (filename.md)
   return parts[parts.length - 1];
@@ -96,66 +96,62 @@ export const storageService = {
     }
   },
 
-  // Projeye özel Dokümanları (.md dosyalarını) oku/oluştur
-  async getProjectDocs(projectId: string, projectPath: string, projectName: string): Promise<WorkspaceDocument[]> {
+  // ==========================================
+  // KÜRESEL NOT YÖNETİMİ (GLOBAL STORAGE)
+  // ==========================================
+  async getGlobalNotes(): Promise<WorkspaceDocument[]> {
     const docs: WorkspaceDocument[] = [];
-
     try {
-      // Klasördeki .md dosyalarını listele
-      let mdFiles = await invoke<string[]>('list_project_md_files', { projectPath });
+      let files = await invoke<string[]>('list_global_notes');
       
-      // Eğer hiç markdown dosyası yoksa varsayılan bir adet 'Notlar.md' oluştur
-      if (mdFiles.length === 0) {
+      // Eğer hiç küresel not yoksa varsayılan bir adet 'Notlar.md' oluştur
+      if (files.length === 0) {
         const defaultFilename = 'Notlar.md';
-        const defaultContent = `# ${projectName} Notları\n\n- Apple Notlar tarzı sadeleştirilmiş not sistemi.\n- Yeni notlar ekleyebilir, başlıklarını ve içeriklerini düzenleyebilirsiniz.`;
-        await invoke('write_project_file', { projectPath, filename: defaultFilename, content: defaultContent });
-        mdFiles = [defaultFilename];
+        const defaultContent = `# Genel Notlar\n\nApple Notlar tarzı sadeleştirilmiş küresel not defteri.\nBuraya yazdığınız notlar tüm projelerde ortak olarak gösterilecektir.\nGitHub ile senkronize olur.`;
+        await invoke('write_global_note', { filename: defaultFilename, content: defaultContent });
+        files = [defaultFilename];
       }
 
-      for (const filename of mdFiles) {
-        const content = await invoke<string>('read_project_file', { projectPath, filename });
+      for (const filename of files) {
+        const content = await invoke<string>('read_global_note', { filename });
         const title = filename.replace('.md', '').replace(/_/g, ' ');
 
         docs.push({
-          id: `doc-${projectId}-${filename}`,
-          project_id: projectId,
-          doc_type: 'notes', // Sadeleştirilmiş olarak hepsi 'notes'
+          id: `global-${filename}`,
+          project_id: 'global', // Projeden bağımsız küresel kimlik
+          doc_type: 'notes',
           title,
           content,
-          updated_at: new Date().toISOString(), // Gerçek zamanlı okunduğu için timestamp
+          updated_at: new Date().toISOString(),
         });
       }
     } catch (e) {
-      console.error('Dokümanlar listelenirken hata:', e);
+      console.error('Küresel notlar okunurken hata:', e);
     }
-
     return docs;
   },
 
-  // Projeye özel Dokümanı (Markdown dosyası) kaydet
-  async saveProjectDoc(projectPath: string, filename: string, content: string): Promise<void> {
+  async saveGlobalNote(filename: string, content: string): Promise<void> {
     try {
-      await invoke('write_project_file', { projectPath, filename, content });
+      await invoke('write_global_note', { filename, content });
     } catch (e) {
       console.error(`${filename} kaydedilirken hata:`, e);
     }
   },
 
-  // Projeye özel Dokümanı (Markdown dosyası) sil
-  async deleteProjectDoc(projectPath: string, filename: string): Promise<void> {
+  async deleteGlobalNote(filename: string): Promise<void> {
     try {
-      await invoke('delete_project_file', { projectPath, filename });
+      await invoke('delete_global_note', { filename });
     } catch (e) {
       console.error(`${filename} silinirken hata:`, e);
     }
   },
 
-  // Projeye özel Dokümanı (Markdown dosyası) yeniden adlandır
-  async renameProjectDoc(projectPath: string, oldFilename: string, newFilename: string): Promise<void> {
+  async renameGlobalNote(oldFilename: string, newFilename: string): Promise<void> {
     try {
-      await invoke('rename_project_file', { projectPath, oldFilename, newFilename });
+      await invoke('rename_global_note', { oldFilename, newFilename });
     } catch (e) {
-      console.error('Dosya yeniden adlandırılamadı:', e);
+      console.error(`${oldFilename} yeniden adlandırılırken hata:`, e);
     }
   },
 };
