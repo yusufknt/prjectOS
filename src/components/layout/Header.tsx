@@ -199,9 +199,12 @@ export const Header: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveCloudSettings} className="p-6 space-y-4">
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                Macbook ve Windows bilgisayarınız arasında verilerinizi senkronize etmek için GitHub Personal Access Token bilginizi girebilirsiniz. Gist otomatik oluşturulacaktır.
-              </p>
+              <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-300 leading-relaxed space-y-1">
+                <p className="font-semibold">Önemli İpucu:</p>
+                <p>
+                  GitHub Personal Access Token oluştururken izinler (scopes) bölümünde <strong>"gist"</strong> kutucuğunu işaretlemeyi unutmayın.
+                </p>
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
@@ -224,7 +227,7 @@ export const Header: React.FC = () => {
                   type="text"
                   value={gistId}
                   onChange={(e) => setGistId(e.target.value)}
-                  placeholder="Otomatik oluşur (veya diğer bilgisayardaki ID'yi yapıştırın)"
+                  placeholder="Boş bırakırsanız hesabınızdan otomatik bulunur / oluşturulur"
                   className="w-full px-3.5 py-2 rounded-xl bg-neutral-100 dark:bg-[#141416] border border-neutral-200/80 dark:border-neutral-800 text-xs font-mono text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
