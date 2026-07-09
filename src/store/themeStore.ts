@@ -1,0 +1,41 @@
+import { create } from 'zustand';
+
+interface ThemeState {
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+  setTheme: (theme: 'light' | 'dark') => void;
+}
+
+export const useThemeStore = create<ThemeState>((set) => {
+  const initialTheme = (localStorage.getItem('project_os_theme') as 'light' | 'dark') || 'light';
+  if (initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+
+  return {
+    theme: initialTheme,
+    toggleTheme: () =>
+      set((state) => {
+        const next = state.theme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('project_os_theme', next);
+        if (next === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        return { theme: next };
+      }),
+    setTheme: (theme) =>
+      set(() => {
+        localStorage.setItem('project_os_theme', theme);
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        return { theme };
+      }),
+  };
+});

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+/dist
+/dist-ssr
+*.local
+
+# Tauri build and compile targets
+src-tauri/target/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ProjectOS custom data
+.gemini/
+.agents/
+.projectos/
+app_icon.png
+app_icon_real.png
