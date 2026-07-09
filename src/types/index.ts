@@ -4,12 +4,19 @@ export interface Project {
   id: string;
   name: string;
   description: string;
-  local_path: string;
-  repository: string;
+  local_path?: string;
+  repository?: string;
+  pushed?: boolean;
   status: ProjectStatus;
-  progress: number;
+  progress?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface CloudSyncSettings {
+  token?: string;
+  gistId?: string;
+  lastSyncedAt?: string;
 }
 
 export type WorkspaceDocumentType = 'notes' | 'architecture' | 'decisions' | 'ideas';

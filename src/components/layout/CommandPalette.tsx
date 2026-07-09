@@ -43,8 +43,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onNavigate }) =>
   const filteredProjects = projects.filter(
     (p) =>
       p.name.toLowerCase().includes(query.toLowerCase()) ||
-      p.description.toLowerCase().includes(query.toLowerCase()) ||
-      p.local_path.toLowerCase().includes(query.toLowerCase())
+      (p.description && p.description.toLowerCase().includes(query.toLowerCase())) ||
+      (p.local_path && p.local_path.toLowerCase().includes(query.toLowerCase()))
   );
 
   const filteredTasks = tasks.filter(

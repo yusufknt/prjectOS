@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 
-export type NavTab = 'dashboard' | 'projects' | 'tasks' | 'notes' | 'timeline';
+export type NavTab = 'dashboard' | 'projects' | 'tasks' | 'notes';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -29,10 +29,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard' as NavTab, label: 'Genel Bakış', icon: LayoutDashboard },
-    { id: 'projects' as NavTab, label: 'Projeler', icon: FolderGit2 },
-    { id: 'tasks' as NavTab, label: 'Görevler (Kanban)', icon: CheckSquare },
-    { id: 'notes' as NavTab, label: 'Notlar & Günlük', icon: FileText },
-    { id: 'timeline' as NavTab, label: 'Zaman Akışı', icon: Clock },
+    { id: 'projects' as NavTab, label: 'Projeler & Notlar', icon: FolderGit2 },
+    { id: 'tasks' as NavTab, label: 'Yapılacaklar', icon: CheckSquare },
+    { id: 'notes' as NavTab, label: 'Not Defteri', icon: FileText },
   ];
 
   return (

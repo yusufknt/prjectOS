@@ -3,10 +3,8 @@ import {
   Plus, 
   Trash2, 
   Search,
-  BookOpen,
-  Calendar,
-  Cloud,
-  CloudLightning
+  FileText,
+  CheckCircle2
 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 
@@ -20,24 +18,18 @@ export const NotesEditor: React.FC = () => {
     ensureProjectDocs 
   } = useProjectStore();
 
-  // Küresel notları yükle
   useEffect(() => {
     ensureProjectDocs('global');
   }, []);
 
-  const projectDocs = workspaceDocs;
-
-  // Arama filtresi
   const [searchQuery, setSearchQuery] = useState('');
-  const filteredDocs = projectDocs.filter((doc) =>
+  const filteredDocs = workspaceDocs.filter((doc) =>
     doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Aktif seçilen not
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  
-  // Eğer seçili not listede yoksa veya ilk kez açılıyorsa ilk notu seç
+
   const activeDoc = 
     filteredDocs.find((d) => d.id === selectedNoteId) || 
     filteredDocs[0] || 
@@ -49,230 +41,162 @@ export const NotesEditor: React.FC = () => {
     }
   }, [activeDoc?.id]);
 
-  // Editör Yerel Durumları (Gecikmeli kaydetmek için)
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
 
-  // Not değiştirildiğinde yerel durumları yükle
   useEffect(() => {
     if (activeDoc) {
       setTitle(activeDoc.title);
       setContent(activeDoc.content);
-      setIsSaving(false);
+      setSaveStatus('saved');
     } else {
       setTitle('');
       setContent('');
     }
   }, [activeDoc?.id]);
 
-  // Otomatik Kaydetme (Autosave & Autorename) — 500ms gecikmeli
   useEffect(() => {
     if (!activeDoc) return;
+    if (title === activeDoc.title && content === activeDoc.content) return;
 
-    // Eğer disktekiyle aynıysa kaydetmeye çalışma
-    if (title === activeDoc.title && content === activeDoc.content) {
-      return;
-    }
-
-    setIsSaving(true);
-    const saveTimer = setTimeout(async () => {
-      try {
-        // 1. Başlık değiştiyse dosya adını güncelle
-        if (title !== activeDoc.title && title.trim() !== '') {
-          await renameWorkspaceDoc(activeDoc.id, title);
-        }
-        
-        // 2. İçerik ve başlığı kaydet
-        await updateWorkspaceDoc(activeDoc.id, { title, content });
-      } catch (err) {
-        console.error("Not kaydedilemedi:", err);
-      } finally {
-        setIsSaving(false);
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      if (title.trim() && title !== activeDoc.title) {
+        renameWorkspaceDoc(activeDoc.id, title);
       }
-    }, 500);
+      updateWorkspaceDoc(activeDoc.id, { title: title || 'Adsız Not', content });
+      setSaveStatus('saved');
+    }, 400);
 
-    return () => clearTimeout(saveTimer);
-  }, [title, content, activeDoc?.id]);
+    return () => clearTimeout(timer);
+  }, [title, content]);
 
-  // Yeni Not Ekleme
-  const handleCreateNote = async () => {
-    const newTitle = `Yeni Not (${new Date().toLocaleDateString('tr-TR')})`;
-    const defaultContent = `# ${newTitle}\n\nNot detaylarını buraya yazabilirsiniz.`;
+  const handleCreateNewNote = async () => {
     await addWorkspaceDoc({
-      title: newTitle,
-      content: defaultContent,
+      title: 'Yeni Not',
+      content: '',
     });
   };
 
-  // Not Silme
-  const handleDeleteNote = async () => {
-    if (!activeDoc) return;
-    if (window.confirm(`"${activeDoc.title}" notunu silmek istediğinize emin misiniz?`)) {
-      await deleteWorkspaceDoc(activeDoc.id);
+  const handleDeleteNote = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await deleteWorkspaceDoc(id);
+    if (selectedNoteId === id) {
       setSelectedNoteId(null);
     }
   };
 
-  // Not içeriğinden kısa özet al
-  const getSnippet = (text: string) => {
-    const cleanText = text
-      .replace(/[#*`_\-]/g, '')
-      .replace(/\[.*\]\(.*\)/g, '')
-      .trim();
-    if (cleanText.length > 50) {
-      return cleanText.substring(0, 50) + '...';
-    }
-    return cleanText || 'Boş Not';
-  };
-
   return (
-    <div className="h-[calc(100vh-130px)] overflow-hidden">
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full overflow-hidden">
-        
-        {/* Left Column: Notes List (Sidebar) */}
-        <div className="lg:col-span-1 flex flex-col bg-white dark:bg-[#1A1A1D] border border-neutral-200/60 dark:border-neutral-800/60 rounded-3xl overflow-hidden shadow-sm h-full">
-          {/* List Action Bar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/50 select-none">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-              Notlarım ({filteredDocs.length})
-            </span>
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={handleCreateNote}
-                className="p-1.5 rounded-xl hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 text-blue-500 hover:text-blue-600 transition-colors"
-                title="Yeni Not Ekle"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleDeleteNote}
-                disabled={!activeDoc}
-                className="p-1.5 rounded-xl hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60 text-neutral-400 hover:text-rose-500 disabled:opacity-40 transition-colors"
-                title="Seçili Notu Sil"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+    <div className="flex h-[calc(100vh-8.5rem)] rounded-3xl bg-white dark:bg-[#1C1C1E] border border-neutral-200/80 dark:border-neutral-800 overflow-hidden shadow-sm select-none">
+      {/* Left Pane: Notes List (Apple Notes Sidebar style) */}
+      <div className="w-72 flex flex-col border-r border-neutral-200/80 dark:border-neutral-800/80 bg-neutral-50/50 dark:bg-[#161618]/50">
+        <div className="p-4 border-b border-neutral-200/60 dark:border-neutral-800/60 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center space-x-2">
+            <FileText className="w-4 h-4 text-blue-500" />
+            <span>Not Defteri ({workspaceDocs.length})</span>
+          </h2>
+          <button
+            onClick={handleCreateNewNote}
+            className="p-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-sm"
+            title="Yeni Not Ekle"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
 
-          {/* Search Box */}
-          <div className="p-3 border-b border-neutral-200/40 dark:border-neutral-800/40">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Notlarda ara..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200/50 dark:border-neutral-800 text-xs text-neutral-950 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
-              />
-            </div>
-          </div>
-
-          {/* List scrollable items */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-white dark:bg-[#1A1A1D]">
-            {filteredDocs.map((doc) => {
-              const isSelected = doc.id === activeDoc?.id;
-              return (
-                <div
-                  key={doc.id}
-                  onClick={() => setSelectedNoteId(doc.id)}
-                  className={`p-3.5 rounded-2xl cursor-pointer transition-all flex flex-col text-left ${
-                    isSelected
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-sm'
-                      : 'hover:bg-neutral-100/70 dark:hover:bg-neutral-800/40 text-neutral-800 dark:text-neutral-200 border border-transparent'
-                  }`}
-                >
-                  <h4 className="text-xs font-bold truncate">
-                    {doc.title || 'Adsız Not'}
-                  </h4>
-                  
-                  <p className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium mt-1 truncate">
-                    {getSnippet(doc.content)}
-                  </p>
-
-                  <div className="flex items-center space-x-1.5 mt-2.5 text-[9px] text-neutral-400 select-none">
-                    <Calendar className="w-3 h-3" />
-                    <span>
-                      {new Date(doc.updated_at).toLocaleDateString('tr-TR', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {filteredDocs.length === 0 && (
-              <div className="py-12 text-center text-xs text-neutral-400 flex flex-col items-center space-y-2 select-none">
-                <BookOpen className="w-8 h-8 opacity-40" />
-                <span>Henüz not yok</span>
-              </div>
-            )}
+        {/* Search */}
+        <div className="p-3">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Notlarda ara..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-white dark:bg-[#1C1C1E] border border-neutral-200/80 dark:border-neutral-800 text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none"
+            />
           </div>
         </div>
 
-        {/* Right Column: Clean Editor */}
-        <div className="lg:col-span-3 flex flex-col bg-white dark:bg-[#1A1A1D] border border-neutral-200/60 dark:border-neutral-800/60 rounded-3xl overflow-hidden shadow-sm h-full">
-          {activeDoc ? (
-            <>
-              {/* Editor Header Bar */}
-              <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/50 select-none">
-                <div className="flex items-center space-x-2 text-[11px] font-semibold">
-                  {isSaving ? (
-                    <>
-                      <CloudLightning className="w-4 h-4 text-blue-500 animate-pulse" />
-                      <span className="text-blue-500">Diske kaydediliyor...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Cloud className="w-4 h-4 text-emerald-500" />
-                      <span className="text-neutral-500 dark:text-neutral-400">Buluta eşitlenmeye hazır (Kaydedildi)</span>
-                    </>
-                  )}
-                </div>
-                <div className="text-[10px] font-mono text-neutral-400">
-                  notes\{title.trim().replace(/ /g, '_') || 'Adsiz_Not'}.md
-                </div>
-              </div>
-
-              {/* Title Input & Editor Area */}
-              <div className="flex-1 flex flex-col p-6 overflow-hidden">
-                {/* Title (Apple Notes style borderless header) */}
-                <div className="mb-4">
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Not Başlığı"
-                    className="w-full bg-transparent text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 focus:outline-none border-none p-0 focus:ring-0 focus:ring-offset-0"
-                  />
+        {/* Notes List */}
+        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
+          {filteredDocs.map((doc) => {
+            const isSelected = doc.id === activeDoc?.id;
+            return (
+              <div
+                key={doc.id}
+                onClick={() => setSelectedNoteId(doc.id)}
+                className={`group p-3 rounded-2xl cursor-pointer transition-all flex items-start justify-between ${
+                  isSelected
+                    ? 'bg-white dark:bg-[#202023] shadow-sm border border-neutral-200/80 dark:border-neutral-700/80'
+                    : 'hover:bg-neutral-200/40 dark:hover:bg-neutral-800/40 text-neutral-700 dark:text-neutral-300'
+                }`}
+              >
+                <div className="min-w-0 flex-1 pr-2">
+                  <h4 className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-600 dark:text-blue-400' : ''}`}>
+                    {doc.title || 'Adsız Not'}
+                  </h4>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
+                    {doc.content.replace(/\n/g, ' ') || 'Boş not...'}
+                  </p>
                 </div>
 
-                {/* Plain Text Editor Area */}
-                <div className="flex-1 overflow-hidden">
-                  <textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="Notlarınızı buraya yazın..."
-                    className="w-full h-full p-4 rounded-2xl bg-neutral-50/40 dark:bg-[#141416]/40 border border-neutral-200/60 dark:border-neutral-800 text-xs font-sans leading-relaxed text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-blue-500/20 resize-none overflow-y-auto"
-                  />
-                </div>
+                <button
+                  onClick={(e) => handleDeleteNote(doc.id, e)}
+                  className="p-1 rounded-lg hover:bg-rose-500/10 text-neutral-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                  title="Sil"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 space-y-3 select-none">
-              <BookOpen className="w-10 h-10 opacity-30" />
-              <p className="text-xs font-medium">Lütfen düzenlemek veya yeni eklemek için bir not seçin</p>
+            );
+          })}
+
+          {filteredDocs.length === 0 && (
+            <div className="py-12 text-center text-xs text-neutral-400">
+              Not bulunamadı.
             </div>
           )}
         </div>
+      </div>
 
+      {/* Right Pane: Apple Note Editor */}
+      <div className="flex-1 flex flex-col bg-white dark:bg-[#1C1C1E] min-w-0">
+        {activeDoc ? (
+          <>
+            {/* Note Editor Header */}
+            <div className="px-6 py-4 border-b border-neutral-200/60 dark:border-neutral-800/60 flex items-center justify-between">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Not başlığı..."
+                className="text-base font-bold bg-transparent text-neutral-900 dark:text-neutral-100 focus:outline-none flex-1 truncate pr-4"
+              />
+
+              <div className="flex items-center space-x-2 text-xs text-neutral-400 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <span>{saveStatus === 'saving' ? 'Kaydediliyor...' : 'Kaydedildi'}</span>
+              </div>
+            </div>
+
+            {/* Note Content Area */}
+            <div className="flex-1 p-6 overflow-y-auto">
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Notlarınızı buraya yazın..."
+                className="w-full h-full bg-transparent text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none resize-none leading-relaxed"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 p-8 text-center">
+            <FileText className="w-12 h-12 mb-3 opacity-30" />
+            <p className="text-sm font-medium">Lütfen soldan bir not seçin veya yeni not ekleyin.</p>
+          </div>
+        )}
       </div>
     </div>
   );

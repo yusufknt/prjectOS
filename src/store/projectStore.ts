@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { storageService, getFilenameFromDocId } from '../services/storage';
 import { gitService } from '../services/git';
+import { githubSyncService } from '../services/githubSync';
 
 interface ProjectState {
   projects: Project[];
@@ -26,10 +27,15 @@ interface ProjectState {
   selectProject: (id: string | null) => Promise<void>;
   setCommandPaletteOpen: (open: boolean) => void;
 
+  // Bulut Eşitleme (GitHub Cloud Sync)
+  syncToCloud: () => Promise<{ success: boolean; message: string }>;
+  syncFromCloud: () => Promise<{ success: boolean; message: string }>;
+
   // Proje İşlemleri
   addProject: (project: Omit<Project, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  toggleProjectPushed: (id: string) => void;
 
   // Küresel Not İşlemleri
   addWorkspaceDoc: (doc: Omit<WorkspaceDocument, 'id' | 'updated_at' | 'doc_type' | 'project_id'>) => Promise<void>;
@@ -80,8 +86,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         await Promise.all(
           projects.map(async (project) => {
             const [tasks, timeline] = await Promise.all([
-              storageService.getProjectTasks(project.local_path),
-              storageService.getProjectTimeline(project.local_path),
+              storageService.getProjectTasks(project.local_path || project.id),
+              storageService.getProjectTimeline(project.local_path || project.id),
             ]);
             allTasks = [...allTasks, ...tasks];
             allTimeline = [...allTimeline, ...timeline];
@@ -118,8 +124,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         get().refreshGitStatus(id);
 
         const [tasks, timeline] = await Promise.all([
-          storageService.getProjectTasks(project.local_path),
-          storageService.getProjectTimeline(project.local_path),
+          storageService.getProjectTasks(project.local_path || project.id),
+          storageService.getProjectTimeline(project.local_path || project.id),
         ]);
 
         set((state) => {
@@ -168,8 +174,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
 
     try {
-      await storageService.saveProjectTasks(newProject.local_path, []);
-      await storageService.saveProjectTimeline(newProject.local_path, [timelineItem]);
+      await storageService.saveProjectTasks(newProject.local_path || newProject.id, []);
+      await storageService.saveProjectTimeline(newProject.local_path || newProject.id, [timelineItem]);
       get().refreshGitStatus(newProject.id);
     } catch (e) {
       console.error("Proje eklenirken hata:", e);
@@ -204,6 +210,40 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             : state.selectedProjectId,
       };
     });
+  },
+
+  toggleProjectPushed: (id) => {
+    const updatedProjects = get().projects.map((project) =>
+      project.id === id
+        ? { ...project, pushed: !project.pushed, updated_at: new Date().toISOString() }
+        : project
+    );
+    storageService.saveProjects(updatedProjects);
+    set({ projects: updatedProjects });
+  },
+
+  syncToCloud: async () => {
+    const { projects, notes, tasks } = get();
+    const result = await githubSyncService.pushToCloud({ projects, notes, tasks });
+    return { success: result.success, message: result.message };
+  },
+
+  syncFromCloud: async () => {
+    const result = await githubSyncService.pullFromCloud();
+    if (result.success && result.data) {
+      const { projects, notes, tasks } = result.data;
+      if (projects && Array.isArray(projects)) {
+        storageService.saveProjects(projects);
+      }
+      set({
+        projects: projects || [],
+        notes: notes || [],
+        workspaceDocs: notes || [],
+        tasks: tasks || [],
+        selectedProjectId: projects?.[0]?.id || null,
+      });
+    }
+    return { success: result.success, message: result.message };
   },
 
   // Küresel Not Ekle
@@ -340,7 +380,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         const projectTasks = get().tasks.filter((t) => t.project_id === project.id);
         const updatedTasks = [newTask, ...projectTasks];
-        await storageService.saveProjectTasks(project.local_path, updatedTasks);
+        await storageService.saveProjectTasks(project.local_path || project.id, updatedTasks);
 
         const timelineItem: TimelineItem = {
           id: `time-${Date.now()}`,
@@ -352,7 +392,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
         const updatedTimeline = [timelineItem, ...projectTimeline];
-        await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
+        await storageService.saveProjectTimeline(project.local_path || project.id, updatedTimeline);
 
         set((state) => {
           const otherTasks = state.tasks.filter((t) => t.project_id !== project.id);
@@ -384,7 +424,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const projectTasks = get().tasks.filter((t) => t.project_id === project.id);
       const updatedTasks = projectTasks.map((t) => t.id === id ? updatedTask : t);
-      await storageService.saveProjectTasks(project.local_path, updatedTasks);
+      await storageService.saveProjectTasks(project.local_path || project.id, updatedTasks);
 
       const timelineItem: TimelineItem = {
         id: `time-${Date.now()}`,
@@ -396,7 +436,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
       const updatedTimeline = [timelineItem, ...projectTimeline];
-      await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
+      await storageService.saveProjectTimeline(project.local_path || project.id, updatedTimeline);
 
       set((state) => {
         const otherTasks = state.tasks.filter((t) => t.project_id !== project.id);
@@ -425,7 +465,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const projectTasks = get().tasks.filter((t) => t.project_id === project.id);
       const updatedTasks = projectTasks.filter((t) => t.id !== id);
-      await storageService.saveProjectTasks(project.local_path, updatedTasks);
+      await storageService.saveProjectTasks(project.local_path || project.id, updatedTasks);
 
       set((state) => {
         const otherTasks = state.tasks.filter((t) => t.project_id !== project.id);
@@ -451,7 +491,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const projectTimeline = get().timeline.filter((t) => t.project_id === project.id);
       const updatedTimeline = [newItem, ...projectTimeline];
-      await storageService.saveProjectTimeline(project.local_path, updatedTimeline);
+      await storageService.saveProjectTimeline(project.local_path || project.id, updatedTimeline);
 
       set((state) => {
         const otherTimeline = state.timeline.filter((t) => t.project_id !== project.id);
@@ -474,7 +514,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
 
     try {
-      const status = await gitService.getGitStatus(project.id, project.local_path);
+      const status = await gitService.getGitStatus(project.id, project.local_path || '');
       set((state) => ({
         gitStatuses: { ...state.gitStatuses, [projectId]: status },
         isGitLoading: { ...state.isGitLoading, [projectId]: false },

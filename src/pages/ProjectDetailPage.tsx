@@ -195,10 +195,10 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({ onNavigate
             Proje Zaman Akışı ({projectTimeline.length})
           </h3>
           <button
-            onClick={() => onNavigate('timeline')}
+            onClick={() => onNavigate('notes')}
             className="text-xs text-blue-500 hover:underline font-medium"
           >
-            Tüm Akışı İncele
+            Notlara Git
           </button>
         </div>
 

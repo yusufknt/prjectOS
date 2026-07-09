@@ -20,12 +20,11 @@ const isTauri = (): boolean => {
 const INITIAL_PROJECTS: Project[] = [
   {
     id: 'proj-1',
-    name: 'ProjectOS Masaüstü Yönetim',
-    description: 'Tauri 2, React 19 ve Dosya Tabanlı (File-Based Workspace) geliştirici yönetim uygulaması.',
-    local_path: '/Users/yusufkantarcioglu/Desktop/projectOS',
+    name: 'ProjectOS Masaüstü',
+    description: 'En son: GitHub bulut eşitleme (Cloud Sync) ve sade Apple arayüzü eklendi.',
+    pushed: true,
     repository: 'https://github.com/yusufknt/prjectOS.git',
     status: 'active',
-    progress: 85,
     created_at: '2026-07-01T10:00:00Z',
     updated_at: new Date().toISOString(),
   },

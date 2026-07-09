@@ -7,7 +7,6 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { KanbanBoard } from './features/tasks/KanbanBoard';
 import { NotesEditor } from './features/notes/NotesEditor';
-import { TimelineView } from './features/timeline/TimelineView';
 import { useProjectStore } from './store/projectStore';
 
 export const App: React.FC = () => {
@@ -41,8 +40,6 @@ export const App: React.FC = () => {
         return <KanbanBoard />;
       case 'notes':
         return <NotesEditor />;
-      case 'timeline':
-        return <TimelineView />;
       default:
         return (
           <DashboardPage
